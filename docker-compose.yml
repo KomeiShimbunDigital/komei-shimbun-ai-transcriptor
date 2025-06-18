@@ -1,6 +1,6 @@
 version: "3.9"
 services:
-  fastapi-app:
+  okoshi-api:
     build: .
     volumes:
       - .dockerenv/:/src/.venv

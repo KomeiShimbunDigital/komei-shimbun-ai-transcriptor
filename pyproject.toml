@@ -1,9 +1,9 @@
 [tool.poetry]
-name = "fastapi-app"
+name = "okoshi-api"
 version = "0.1.0"
 description = "fastapi開発キット"
 authors = ["Komei Shimbun"]
-packages = [{include = "fastapi-app"}]
+packages = [{include = "okoshi-api"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
