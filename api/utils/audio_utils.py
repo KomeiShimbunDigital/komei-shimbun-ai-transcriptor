@@ -1,153 +1,124 @@
 import os
-import tempfile
+import subprocess
 from pathlib import Path
-from typing import List, Tuple
-import librosa
-import soundfile as sf
-from datetime import datetime
-import hashlib
+from pydub import AudioSegment
+from pydub.utils import mediainfo
+from pydub.exceptions import CouldntDecodeError
 
 class AudioProcessor:
-    def __init__(self, output_dir: str = "audio_files"):
+    def __init__(self, output_dir: str = "processed_audio"):
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
-        
-    def save_original_file(self, file_content: bytes, filename: str, user: str) -> str:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.allowed_extensions = {".m4a", ".mp3", ".webm", ".mp4", ".mpga", ".wav", ".mpeg", ".wma"}
+        self.max_file_size_mb = 500
+
+    # Ensure this method signature is exactly as follows:
+    def save_original_file(self, file_content: bytes, original_filename: str, user: str) -> Path:
         """
-        アップロードされた音声ファイルを保存
+        元の音声ファイルを指定されたユーザーのサブディレクトリに保存します。
         """
-        # ファイル名を安全にする
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_filename = f"{user}_{timestamp}_{filename}"
+        user_dir = self.output_dir / user
+        user_dir.mkdir(parents=True, exist_ok=True)
         
-        # ファイルパスを生成
-        file_path = self.output_dir / safe_filename
-        
-        # ファイルを保存
-        with open(file_path, "wb") as f:
+        file_extension = Path(original_filename).suffix.lower()
+        if file_extension not in self.allowed_extensions:
+            raise ValueError(f"許可されていないファイル形式です: {file_extension}")
+
+        save_path = user_dir / original_filename
+        with open(save_path, "wb") as f:
             f.write(file_content)
-            
-        return str(file_path)
-    
-    def get_audio_duration(self, file_path: str) -> float:
+        return save_path
+
+    # ... (rest of the AudioProcessor class methods)
+    def validate_audio_file(self, file_path: Path) -> tuple[bool, str]:
         """
-        音声ファイルの長さを取得（秒）
+        音声ファイルの形式とサイズを検証します。
         """
+        if not file_path.is_file():
+            return False, "ファイルが見つかりません。"
+        
+        file_size_mb = file_path.stat().st_size / (1024 * 1024)
+        if file_size_mb > self.max_file_size_mb:
+            return False, f"ファイルサイズが上限（{self.max_file_size_mb}MB）を超えています。"
+        
         try:
-            y, sr = librosa.load(file_path, sr=None)
-            duration = librosa.get_duration(y=y, sr=sr)
-            return duration
+            audio = AudioSegment.from_file(file_path)
+            return True, "ファイルは有効です。"
+        except CouldntDecodeError as e:
+            # Specific error for pydub's inability to decode (often due to ffmpeg errors)
+            return False, f"オーディオファイルをデコードできませんでした。ファイル形式が不正であるか、破損している可能性があります。FFmpegのエラー: {e}"
         except Exception as e:
-            print(f"音声ファイルの読み込みエラー: {e}")
-            return 0.0
-    
-    def split_audio(self, file_path: str, segment_length: int = 600) -> List[str]:
+            return False, f"不明なエラーによりファイルの検証に失敗しました: {e}"
+
+    def get_audio_duration(self, file_path: Path) -> float:
         """
-        音声ファイルを指定された長さ（デフォルト10分=600秒）で分割
+        音声ファイルの長さを秒単位で取得します。
         """
         try:
-            # 音声ファイルを読み込み
-            y, sr = librosa.load(file_path, sr=None)
-            duration = librosa.get_duration(y=y, sr=sr)
+            audio = AudioSegment.from_file(file_path)
+            return len(audio) / 1000.0
+        except Exception as e:
+            raise ValueError(f"音声の長さを取得できませんでした: {e}")
+
+    def split_audio(self, file_path: Path, segment_length: int = 600) -> list[Path]:
+        """
+        音声ファイルを指定された秒数で分割し、分割されたファイルのパスリストを返します。
+        """
+        try:
+            audio = AudioSegment.from_file(file_path)
+            total_length_ms = len(audio)
+            segment_length_ms = segment_length * 1000
             
-            # 分割が必要かチェック
-            if duration <= segment_length:
-                return [file_path]
-            
-            # 分割されたファイルのリスト
             split_files = []
+            file_stem = file_path.stem
+            file_extension = ".mp3"
+
+            for i, start_ms in enumerate(range(0, total_length_ms, segment_length_ms)):
+                end_ms = min(start_ms + segment_length_ms, total_length_ms)
+                segment = audio[start_ms:end_ms]
+                
+                output_segment_path = self.output_dir / f"{file_stem}_part_{i:03d}{file_extension}"
+                segment.export(output_segment_path, format="mp3")
+                split_files.append(output_segment_path)
             
-            # ベースファイル名を取得
-            base_path = Path(file_path)
-            base_name = base_path.stem
-            extension = base_path.suffix
-            
-            # 指定された長さで分割
-            segment_samples = segment_length * sr
-            total_samples = len(y)
-            
-            segment_count = 0
-            for start_sample in range(0, total_samples, segment_samples):
-                end_sample = min(start_sample + segment_samples, total_samples)
-                segment_audio = y[start_sample:end_sample]
-                
-                # 分割ファイル名を生成
-                segment_filename = f"{base_name}_part_{segment_count:03d}{extension}"
-                segment_path = base_path.parent / segment_filename
-                
-                # 分割された音声を保存
-                sf.write(str(segment_path), segment_audio, sr)
-                split_files.append(str(segment_path))
-                
-                segment_count += 1
-                
-            print(f"音声ファイルを{segment_count}個のセグメントに分割しました")
             return split_files
-            
         except Exception as e:
-            print(f"音声分割エラー: {e}")
-            return [file_path]  # エラーの場合は元ファイルを返す
-    
-    def validate_audio_file(self, file_path: str) -> Tuple[bool, str]:
+            raise Exception(f"音声ファイルの分割中にエラーが発生しました: {e}")
+
+    def convert_to_mp3_if_needed(self, file_path: Path) -> Path:
         """
-        音声ファイルの検証
+        指定されたファイルがMP3でない場合、MP3に変換します。
+        変換されたファイルのパスを返します。
         """
+        file_extension = file_path.suffix.lower()
+        if file_extension == ".mp3":
+            print(f"ファイルは既にMP3形式です: {file_path}")
+            return file_path
+        
+        output_mp3_path = file_path.with_suffix(".mp3")
         try:
-            # ファイルサイズチェック (500MB = 500 * 1024 * 1024 bytes)
-            file_size = os.path.getsize(file_path)
-            max_size = 500 * 1024 * 1024
-            
-            if file_size > max_size:
-                return False, f"ファイルサイズが大きすぎます: {file_size / (1024*1024):.1f}MB (最大500MB)"
-            
-            # 音声ファイルとして読み込み可能かチェック
-            y, sr = librosa.load(file_path, sr=None, duration=1.0)  # 最初の1秒だけ読み込み
-            
-            if len(y) == 0:
-                return False, "音声データが空です"
-            
-            # 長さをチェック
-            duration = self.get_audio_duration(file_path)
-            if duration > 7200:  # 2時間以上
-                return False, f"音声が長すぎます: {duration/60:.1f}分 (最大120分)"
-            
-            return True, f"音声ファイル検証成功: {duration/60:.1f}分, {file_size/(1024*1024):.1f}MB"
-            
+            print(f"MP3に変換中: {file_path} -> {output_mp3_path}")
+            audio = AudioSegment.from_file(file_path)
+            audio.export(output_mp3_path, format="mp3")
+            print("変換成功。元のファイルを削除します。")
+            os.remove(file_path)
+            return output_mp3_path
+        except CouldntDecodeError as e:
+            # Specific error for pydub's inability to decode during conversion
+            raise Exception(f"MP3への変換中にデコードエラーが発生しました。ファイル形式が不正であるか、破損している可能性があります。FFmpegのエラー: {e}")
         except Exception as e:
-            return False, f"音声ファイル検証エラー: {str(e)}"
-    
-    def cleanup_temp_files(self, file_paths: List[str], keep_original: bool = True):
+            raise Exception(f"MP3への変換中に予期せぬエラーが発生しました: {e}")
+
+    def cleanup_temp_files(self, file_paths: list[Path], keep_original: bool = False):
         """
-        一時ファイルのクリーンアップ
+        一時ファイルをクリーンアップします。
         """
-        for file_path in file_paths:
-            try:
-                # 元ファイルは保持する場合はスキップ
-                if keep_original and not "_part_" in file_path:
-                    continue
-                    
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    print(f"クリーンアップ: {file_path}")
-            except Exception as e:
-                print(f"ファイル削除エラー: {file_path}, {e}")
-    
-    def get_file_info(self, file_path: str) -> dict:
-        """
-        ファイル情報を取得
-        """
-        try:
-            file_size = os.path.getsize(file_path)
-            duration = self.get_audio_duration(file_path)
-            
-            return {
-                "file_path": file_path,
-                "file_size_mb": round(file_size / (1024 * 1024), 2),
-                "duration_minutes": round(duration / 60, 2),
-                "duration_seconds": round(duration, 2)
-            }
-        except Exception as e:
-            return {
-                "file_path": file_path,
-                "error": str(e)
-            }
+        for f_path in file_paths:
+            if f_path.is_file():
+                try:
+                    if keep_original and "processed_audio" in str(f_path) and not "_part_" in str(f_path):
+                        continue
+                    os.remove(f_path)
+                    print(f"クリーンアップ: {f_path}")
+                except Exception as e:
+                    print(f"クリーンアップ失敗: {f_path} - {e}")

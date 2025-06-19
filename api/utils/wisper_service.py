@@ -6,6 +6,7 @@ import asyncio
 import aiofiles
 import time
 from datetime import datetime
+import uuid # uuidをインポート
 
 class WhisperService:
     def __init__(self, api_key: str = None):
@@ -112,7 +113,7 @@ class WhisperService:
                     "total_duration": 0,
                     "total_processing_time": 0,
                     "segment_count": 0,
-                    "combined_segments": []
+                    "combined_segments": [] # Add combined_segments for the new requirement
                 }
             
             # ファイル名でソート（part_000, part_001... の順序を保持）
@@ -186,6 +187,7 @@ class WhisperService:
     async def save_transcription_result(self, result: Dict, output_dir: str, user: str, original_filename: str) -> str:
         """
         文字起こし結果をファイルに保存
+        ファイル名をユーザー名、タイムスタンプ、UUIDを組み合わせた形式に変更
         """
         try:
             # 出力ディレクトリを作成
@@ -194,14 +196,17 @@ class WhisperService:
             
             # ファイル名を生成
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"{user}_{timestamp}_{Path(original_filename).stem}_transcription.txt"
+            # 最も安全なのは、UUIDをベースにしたファイル名にすることです
+            unique_id = str(uuid.uuid4())
+            output_filename = f"transcription_{timestamp}_{unique_id}.txt" #
+
             output_file_path = output_path / output_filename
             
             # ファイル内容を作成
             content_parts = [
                 f"音声文字起こし結果",
                 f"=" * 50,
-                f"登録者: {user}",
+                f"登録者: {user}", # ファイル内容にはユーザー名を保持
                 f"元ファイル: {original_filename}",
                 f"処理日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 f"音声長: {result.get('total_duration', 0):.1f}秒",
@@ -222,7 +227,6 @@ class WhisperService:
                 "------------------------------------"
             ])
 
-            # Add segmented text with timestamps
             for segment_line in result.get("combined_segments", []):
                 content_parts.append(segment_line)
             

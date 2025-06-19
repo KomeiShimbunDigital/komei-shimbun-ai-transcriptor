@@ -39,8 +39,8 @@
 
                 <div id="dragDropArea" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-6 hover:border-blue-400 transition-colors cursor-pointer">
                     <p class="text-gray-600 text-lg font-medium mb-2">Drag and drop an audio file here</p>
-                    <p class="text-gray-500 text-sm mb-4">対応ファイル形式: MP3, WAV, AAC (最大500MB)</p>
-                    <input type="file" id="audioFile" name="audio_file" class="hidden" accept=".mp3,.wav,.aac,.m4a">
+                    <p class="text-gray-500 text-sm mb-4">対応ファイル形式: MP3, WAV, AAC,M4A,WEBM,MP4,MPEG,WMA (最大500MB)</p>
+                    <input type="file" id="audioFile" name="audio_file" class="hidden" accept=".mp3,.wav,.aac,.m4a,.webm,.mp4,.mpeg,.wma">
                     <label for="audioFile" class="inline-block bg-white text-blue-600 px-6 py-2 border border-blue-600 rounded-md hover:bg-blue-50 transition-colors cursor-pointer">ファイルを選択</label>
                     <p id="fileNameDisplay" class="text-gray-700 text-sm mt-2 hidden">選択されたファイル: <span id="selectedFileName"></span></p>
                 </div>
@@ -106,7 +106,8 @@
 
         let selectedFile = null;
         let currentTranscriptionText = '';
-        let serverGeneratedFilePath = null; // New variable to store the server file path
+        // ここが重要：サーバーから返されるファイルパスを保持する変数
+        let serverGeneratedFilePath = null; // 例: "transcription_results/transcription_20250619_uuid.txt"
 
         // Function to update button state
         function updateButtonState() {
@@ -250,7 +251,8 @@
             downloadButton.classList.add('opacity-50', 'cursor-not-allowed');
             downloadButton.classList.remove('hover:bg-gray-300');
 
-            serverGeneratedFilePath = null; // Reset the file path on new processing
+            // 修正: リセット時に serverGeneratedFilePath をクリア
+            serverGeneratedFilePath = null;
         }
 
         // 転写成功時の処理
@@ -261,10 +263,9 @@
             currentTranscriptionText = response.transcription_text || 'テキストの取得に失敗しました。';
             transcriptionResultArea.innerText = currentTranscriptionText;
 
-            // Store the server-generated file path
+            // 修正: サーバーから返されたファイルのフルパスを保存
             if (response.processing_info && response.processing_info.file_path) {
-                // Extract only the filename from the full path to construct the download URL
-                serverGeneratedFilePath = response.processing_info.file_path.split('/').pop();
+                serverGeneratedFilePath = response.processing_info.file_path; // フルパス (例: "transcription_results/transcription_20250619_uuid.txt")
             }
 
 
@@ -333,12 +334,18 @@
 
         // Download functionality
         downloadButton.addEventListener('click', () => {
-            if (serverGeneratedFilePath) {
-                // Construct the URL to the new download endpoint
-                const downloadUrl = `/download/transcription/${serverGeneratedFilePath}`;
+            if (serverGeneratedFilePath) { // フルパスが設定されていることを確認
+                // ファイル名だけを抽出（FastAPIに渡すため）
+                const actualFileName = serverGeneratedFilePath.split('/').pop(); // 例: "transcription_20250619_uuid.txt"
+                // ファイル名をURLエンコードして、エンドポイントのパスに含める
+                const encodedFileName = encodeURIComponent(actualFileName);
+                const downloadUrl = `/download/transcription/${encodedFileName}`;
+                
                 const a = document.createElement('a');
                 a.href = downloadUrl;
-                a.download = serverGeneratedFilePath; // Use the actual filename
+                // download属性には、ブラウザに表示させたいファイル名（デコードされていない元のファイル名）を指定
+                // ここでは、サーバー上の実際のファイル名を使用。必要に応じて、登録者名や元のファイル名を加えることも可能
+                a.download = actualFileName; 
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);

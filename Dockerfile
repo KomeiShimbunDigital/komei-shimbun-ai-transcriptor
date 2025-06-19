@@ -1,8 +1,12 @@
-FROM python:3.11-buster
+FROM python:3.11-slim-bullseye
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /src
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+    
 RUN pip install poetry
 
 COPY pyproject.toml* poetry.lock* ./
