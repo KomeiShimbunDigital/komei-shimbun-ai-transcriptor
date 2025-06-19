@@ -64,7 +64,6 @@
                 処理の状況
             </p>
 
-            <!-- 処理情報表示エリア -->
             <div id="processingInfo" class="hidden mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
                 <h3 class="text-sm font-medium text-blue-800 mb-2">処理情報</h3>
                 <div class="text-sm text-blue-700">
@@ -348,9 +347,25 @@
         });
 
         // Refresh functionality
-        refreshButton.addEventListener('click', () => {
-            location.reload();
+        refreshButton.addEventListener('click', async () => {
+            if (confirm('画面をリフレッシュし、過去のアップロードファイルを削除しますか？')) {
+                try {
+                    const response = await fetch('/okoshi/delete', { method: 'DELETE' });
+                    const result = await response.json();
+                    if (response.ok) {
+                        alert(result.message);
+                    } else {
+                        alert(`ファイルの削除中にエラーが発生しました: ${result.detail || result.message}`);
+                    }
+                } catch (error) {
+                    alert('ファイルの削除リクエスト中にネットワークエラーが発生しました。');
+                    console.error('Delete request error:', error);
+                } finally {
+                    location.reload(); // Always reload the page after attempting deletion
+                }
+            }
         });
+
 
         // Initial state update
         updateButtonState();

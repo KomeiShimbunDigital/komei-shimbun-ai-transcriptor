@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 import uuid
+import shutil
+import glob
 
 # 必要なユーティリティをインポート
 from api.utils.audio_utils import AudioProcessor
@@ -157,4 +159,71 @@ async def okoshi_process(
         raise HTTPException(
             status_code=500, 
             detail=f"サーバー内部エラーが発生しました。ITサポートに連絡してください。(ID: {process_id})"
+        )
+
+@router.delete("/okoshi/delete")
+async def delete_all_files():
+    """
+    processed_audio/とtranscription_results/配下の全ファイルを削除
+    """
+    try:
+        deleted_files = []
+        error_files = []
+        
+        # 削除対象ディレクトリ
+        directories_to_clean = [
+            "processed_audio",
+            "transcription_results"
+        ]
+        
+        for directory in directories_to_clean:
+            if os.path.exists(directory):
+                print(f"🗑️ {directory}/ 配下のファイル削除開始...")
+                
+                # ディレクトリ内の全ファイルを取得
+                pattern = os.path.join(directory, "*")
+                files = glob.glob(pattern)
+                
+                for file_path in files:
+                    try:
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                            deleted_files.append(file_path)
+                            print(f"✓ 削除: {file_path}")
+                        elif os.path.isdir(file_path):
+                            # サブディレクトリも削除
+                            shutil.rmtree(file_path)
+                            deleted_files.append(file_path)
+                            print(f"✓ ディレクトリ削除: {file_path}")
+                    except Exception as e:
+                        error_files.append({"file": file_path, "error": str(e)})
+                        print(f"❌ 削除失敗: {file_path} - {str(e)}")
+            else:
+                print(f"⚠️ ディレクトリが存在しません: {directory}/")
+        
+        # 結果レスポンス
+        response = {
+            "message": f"ファイル削除が完了しました。削除されたファイル数: {len(deleted_files)}",
+            "deleted_files_count": len(deleted_files),
+            "error_files_count": len(error_files)
+        }
+        
+        if error_files:
+            response["message"] += f" (エラー: {len(error_files)}件)"
+            response["errors"] = error_files
+        
+        print(f"=== ファイル削除完了 ===")
+        print(f"削除成功: {len(deleted_files)}件")
+        print(f"削除失敗: {len(error_files)}件")
+        
+        return response
+        
+    except Exception as e:
+        print(f"❌ ファイル削除処理でエラー: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"ファイル削除処理中にエラーが発生しました: {str(e)}"
         )
