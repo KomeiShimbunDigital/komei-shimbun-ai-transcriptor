@@ -1,7 +1,7 @@
 from fastapi import FastAPI
-
+from api.routers import okoshi
+from api.routers import ui
 app = FastAPI()
 
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
+app.include_router(okoshi.router)
+app.include_router(ui.router)

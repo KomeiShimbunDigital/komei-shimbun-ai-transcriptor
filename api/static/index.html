@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Komei Shimbun AI Transcriptor - 音声書き起こしアプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .drag-active {
+            border-color: #3B82F6; /* blue-600 */
+            background-color: #DBEAFE; /* blue-50 */
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans antialiased">
+
+    <header class="bg-white shadow-sm">
+        <nav class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c-4.639 0-8 0-8 0s3.361 0 8 0zM12 4v9l8 4v-9l-8-4z"></path></svg>
+                <span class="text-xl font-bold text-gray-800">Komei Shimbun AI Transcriptor</span>
+            </div>
+            <div class="hidden md:flex space-x-6">
+            </div>
+            <div></div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-4 py-8 md:py-12 grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
+
+        <section class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-6">Upload Audio File</h2>
+
+            <form id="transcriptionForm" method="post" enctype="multipart/form-data">
+                <div class="mb-6">
+                    <label for="registrantName" class="block text-gray-700 text-sm font-medium mb-2">登録者名</label>
+                    <input type="text" id="registrantName" name="user" placeholder="氏名を入力してください" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+
+                <div id="dragDropArea" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-6 hover:border-blue-400 transition-colors cursor-pointer">
+                    <p class="text-gray-600 text-lg font-medium mb-2">Drag and drop an audio file here</p>
+                    <p class="text-gray-500 text-sm mb-4">対応ファイル形式: MP3, WAV, AAC (最大500MB)</p>
+                    <input type="file" id="audioFile" name="audio_file" class="hidden" accept=".mp3,.wav,.aac,.m4a">
+                    <label for="audioFile" class="inline-block bg-white text-blue-600 px-6 py-2 border border-blue-600 rounded-md hover:bg-blue-50 transition-colors cursor-pointer">ファイルを選択</label>
+                    <p id="fileNameDisplay" class="text-gray-700 text-sm mt-2 hidden">選択されたファイル: <span id="selectedFileName"></span></p>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-medium mb-2">アップロード進捗</label>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div class="bg-blue-600 h-2.5 rounded-full" style="width: 0%" id="uploadProgressBar"></div>
+                    </div>
+                    <p class="text-gray-500 text-sm mt-2" id="uploadProgressText">0%</p>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-md text-lg font-semibold hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2" id="startTranscriptionButton" disabled>テキスト化を開始</button>
+            </form>
+        </section>
+
+        <section class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">書き起こし結果</h2>
+            
+            <p class="mb-6 text-gray-600" id="transcriptionStatus">
+                処理の状況
+            </p>
+
+            <!-- 処理情報表示エリア -->
+            <div id="processingInfo" class="hidden mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <h3 class="text-sm font-medium text-blue-800 mb-2">処理情報</h3>
+                <div class="text-sm text-blue-700">
+                    <p>音声長: <span id="audioDuration">-</span>分</p>
+                    <p>処理時間: <span id="processingTime">-</span>秒</p>
+                    <p>セグメント数: <span id="segmentCount">-</span>個</p>
+                </div>
+            </div>
+
+            <div class="bg-gray-100 border border-gray-200 rounded-md p-4 min-h-64 mb-6 text-gray-800 leading-relaxed overflow-y-auto" id="transcriptionResultArea">
+                <p class="text-gray-500 italic">書き起こし結果はここに表示されます。</p>
+            </div>
+
+            <div class="flex flex-col space-y-4">
+                <button class="bg-gray-200 text-gray-700 py-3 rounded-md text-lg font-semibold hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 opacity-50 cursor-not-allowed" id="downloadButton" disabled>テキストファイルをダウンロード</button>
+                <button class="bg-gray-200 text-gray-700 py-3 rounded-md text-lg font-semibold hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2" id="refreshButton">リフレッシュ</button>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        const transcriptionForm = document.getElementById('transcriptionForm');
+        const registrantNameInput = document.getElementById('registrantName');
+        const audioFileInput = document.getElementById('audioFile');
+        const startTranscriptionButton = document.getElementById('startTranscriptionButton');
+        const uploadProgressBar = document.getElementById('uploadProgressBar');
+        const uploadProgressText = document.getElementById('uploadProgressText');
+        const transcriptionStatus = document.getElementById('transcriptionStatus');
+        const transcriptionResultArea = document.getElementById('transcriptionResultArea');
+        const downloadButton = document.getElementById('downloadButton');
+        const refreshButton = document.getElementById('refreshButton');
+        const dragDropArea = document.getElementById('dragDropArea');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const selectedFileNameSpan = document.getElementById('selectedFileName');
+        const processingInfo = document.getElementById('processingInfo');
+        const audioDuration = document.getElementById('audioDuration');
+        const processingTime = document.getElementById('processingTime');
+        const segmentCount = document.getElementById('segmentCount');
+
+        let selectedFile = null;
+        let currentTranscriptionText = '';
+
+        // Function to update button state
+        function updateButtonState() {
+            startTranscriptionButton.disabled = !selectedFile || registrantNameInput.value.trim() === '';
+            if (startTranscriptionButton.disabled) {
+                startTranscriptionButton.classList.add('opacity-50', 'cursor-not-allowed');
+                startTranscriptionButton.classList.remove('hover:bg-blue-700');
+            } else {
+                startTranscriptionButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                startTranscriptionButton.classList.add('hover:bg-blue-700');
+            }
+            // ダウンロードボタンも初期状態は非活性
+            downloadButton.disabled = true;
+            downloadButton.classList.add('opacity-50', 'cursor-not-allowed');
+            downloadButton.classList.remove('hover:bg-gray-300');
+        }
+
+        // Event listener for file input change
+        audioFileInput.addEventListener('change', (event) => {
+            selectedFile = event.target.files[0];
+            if (selectedFile) {
+                selectedFileNameSpan.textContent = selectedFile.name;
+                fileNameDisplay.classList.remove('hidden');
+            } else {
+                fileNameDisplay.classList.add('hidden');
+                selectedFileNameSpan.textContent = '';
+            }
+            updateButtonState();
+        });
+
+        // Event listener for registrant name input
+        registrantNameInput.addEventListener('input', updateButtonState);
+
+        // Drag and Drop functionality
+        dragDropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dragDropArea.classList.add('drag-active');
+        });
+
+        dragDropArea.addEventListener('dragleave', () => {
+            dragDropArea.classList.remove('drag-active');
+        });
+
+        dragDropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dragDropArea.classList.remove('drag-active');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(files[0]);
+                audioFileInput.files = dataTransfer.files;
+                audioFileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+
+        // フォーム送信処理 (JavaScriptでFetch APIを使用)
+        transcriptionForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            if (!selectedFile || registrantNameInput.value.trim() === '') {
+                alert('登録者名と音声ファイルを選択してください。');
+                return;
+            }
+
+            // UIを更新して処理中状態を表示
+            setProcessingState();
+
+            const formData = new FormData();
+            formData.append('user', registrantNameInput.value.trim());
+            formData.append('audio_file', selectedFile);
+
+            try {
+                // アップロード進捗の監視 (XMLHttpRequestを使用)
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/okoshi', true);
+
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percent = (e.loaded / e.total) * 100;
+                        uploadProgressBar.style.width = `${percent}%`;
+                        uploadProgressText.textContent = `${Math.round(percent)}%`;
+                        if (percent === 100) {
+                            transcriptionStatus.textContent = 'ファイルのアップロードが完了しました。AIがテキスト化を開始します。しばらくお待ちください...';
+                            startTranscriptionButton.textContent = 'テキスト化を実行中...';
+                        }
+                    }
+                });
+
+                xhr.onload = () => {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            // 成功レスポンス - バックエンドからの実際のデータを使用
+                            console.log('API Response:', response);
+                            handleTranscriptionSuccess(response);
+                        } else {
+                            // エラーレスポンス
+                            console.error('API Error:', response);
+                            handleTranscriptionError(response.detail || 'テキスト化に失敗しました。ITサポートに連絡してください。');
+                        }
+                    } catch (parseError) {
+                        console.error('JSON Parse Error:', parseError);
+                        console.error('Response Text:', xhr.responseText);
+                        handleTranscriptionError('サーバーからの応答を解析できませんでした。ITサポートに連絡してください。');
+                    }
+                };
+
+                xhr.onerror = () => {
+                    console.error('Network Error during upload');
+                    handleTranscriptionError('ネットワークエラーが発生しました。ITサポートに連絡してください。');
+                };
+
+                xhr.send(formData);
+
+            } catch (error) {
+                console.error('Fetch error:', error);
+                handleTranscriptionError('予期せぬエラーが発生しました。ITサポートに連絡してください。');
+            }
+        });
+
+        // 処理中状態に設定
+        function setProcessingState() {
+            registrantNameInput.disabled = true;
+            audioFileInput.disabled = true;
+            startTranscriptionButton.disabled = true;
+            startTranscriptionButton.textContent = 'アップロード中...';
+            startTranscriptionButton.classList.add('opacity-50', 'cursor-not-allowed');
+            startTranscriptionButton.classList.remove('hover:bg-blue-700');
+
+            uploadProgressBar.style.width = '0%';
+            uploadProgressText.textContent = '0%';
+            transcriptionStatus.textContent = 'ファイルのアップロードを開始しています...';
+            transcriptionStatus.classList.remove('text-red-600', 'text-green-600');
+            transcriptionStatus.classList.add('text-gray-600');
+            transcriptionResultArea.innerHTML = '<p class="text-gray-500 italic">書き起こし結果はここに表示されます。</p>';
+            
+            // 処理情報エリアを非表示
+            processingInfo.classList.add('hidden');
+            
+            downloadButton.disabled = true;
+            downloadButton.classList.add('opacity-50', 'cursor-not-allowed');
+            downloadButton.classList.remove('hover:bg-gray-300');
+        }
+
+        // 転写成功時の処理
+        function handleTranscriptionSuccess(response) {
+            console.log('Transcription successful:', response);
+            
+            // 実際の書き起こしテキストを表示
+            currentTranscriptionText = response.transcription_text || 'テキストの取得に失敗しました。';
+            transcriptionResultArea.innerText = currentTranscriptionText;
+
+            // ステータス更新
+            transcriptionStatus.textContent = response.message || 'テキスト化が完了しました！';
+            transcriptionStatus.classList.remove('text-gray-600', 'text-red-600');
+            transcriptionStatus.classList.add('text-green-600');
+
+            // 処理情報の表示
+            if (response.processing_info) {
+                const info = response.processing_info;
+                audioDuration.textContent = info.duration_minutes || '不明';
+                processingTime.textContent = info.processing_time_seconds || '不明';
+                segmentCount.textContent = info.segment_count || '不明';
+                processingInfo.classList.remove('hidden');
+            }
+
+            // ダウンロードボタンを有効化
+            downloadButton.disabled = false;
+            downloadButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            downloadButton.classList.add('hover:bg-gray-300');
+
+            // 送信ボタンの状態更新
+            startTranscriptionButton.textContent = '完了済み';
+            startTranscriptionButton.disabled = true;
+            startTranscriptionButton.classList.add('opacity-50', 'cursor-not-allowed');
+            startTranscriptionButton.classList.remove('hover:bg-blue-700');
+
+            // ファイル選択状態をリセット
+            resetFileSelection();
+            
+            // 入力フォームを再活性化（次のアップロードのため）
+            registrantNameInput.disabled = false;
+            audioFileInput.disabled = false;
+        }
+
+        // 転写エラー時の処理
+        function handleTranscriptionError(errorMessage) {
+            transcriptionStatus.textContent = errorMessage;
+            transcriptionStatus.classList.add('text-red-600');
+            transcriptionStatus.classList.remove('text-gray-600', 'text-green-600');
+            
+            resetUIForError();
+        }
+
+        // ファイル選択状態のリセット
+        function resetFileSelection() {
+            selectedFile = null;
+            audioFileInput.value = '';
+            fileNameDisplay.classList.add('hidden');
+            selectedFileNameSpan.textContent = '';
+        }
+
+        // エラー時のUI復元
+        function resetUIForError() {
+            registrantNameInput.disabled = false;
+            audioFileInput.disabled = false;
+            startTranscriptionButton.disabled = false;
+            startTranscriptionButton.textContent = 'テキスト化を開始';
+            startTranscriptionButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            startTranscriptionButton.classList.add('hover:bg-blue-700');
+            
+            resetFileSelection();
+            updateButtonState();
+        }
+
+        // Download functionality
+        downloadButton.addEventListener('click', () => {
+            const registrantName = registrantNameInput.value.trim() || 'Unknown';
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const fileName = `${registrantName}_${year}${month}${day}_${hours}${minutes}${seconds}.txt`;
+
+            // 実際の書き起こしテキストを使用
+            const textContent = currentTranscriptionText || transcriptionResultArea.innerText;
+            const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // Refresh functionality
+        refreshButton.addEventListener('click', () => {
+            location.reload();
+        });
+
+        // Initial state update
+        updateButtonState();
+    </script>
+</body>
+</html>
