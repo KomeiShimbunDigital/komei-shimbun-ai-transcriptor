@@ -111,7 +111,8 @@ class WhisperService:
                     "error": "すべての文字起こしが失敗しました",
                     "total_duration": 0,
                     "total_processing_time": 0,
-                    "segment_count": 0
+                    "segment_count": 0,
+                    "combined_segments": []
                 }
             
             # ファイル名でソート（part_000, part_001... の順序を保持）
@@ -119,8 +120,10 @@ class WhisperService:
             
             # テキストを結合
             combined_text_parts = []
+            combined_segments_with_timestamps = [] # To store segments with timestamps
             total_duration = 0
             total_processing_time = 0
+            segment_global_id = 0 # Global segment ID across all files
             
             for i, result in enumerate(successful_results):
                 text = result.get("text", "").strip()
@@ -128,6 +131,23 @@ class WhisperService:
                     # セグメント番号を追加（デバッグ用）
                     segment_header = f"\n--- セグメント {i+1} ---\n" if len(successful_results) > 1 else ""
                     combined_text_parts.append(f"{segment_header}{text}")
+
+                # Process segments for timestamped output
+                for segment in result.get("segments", []):
+                    # Access attributes using dot notation instead of .get()
+                    start_time = segment.start
+                    end_time = segment.end
+                    segment_text = segment.text.strip()
+                    
+                    # Format timestamp
+                    start_min = int(start_time // 60)
+                    start_sec = int(start_time % 60)
+                    end_min = int(end_time // 60)
+                    end_sec = int(end_time % 60)
+                    timestamp_str = f"[{start_min:02d}:{start_sec:02d} - {end_min:02d}:{end_sec:02d}]"
+                    
+                    combined_segments_with_timestamps.append(f"{timestamp_str} {segment_text}")
+                    segment_global_id += 1
                 
                 total_duration += result.get("duration", 0)
                 total_processing_time += result.get("processing_time", 0)
@@ -146,9 +166,10 @@ class WhisperService:
                 "error": error_summary if error_summary else None,
                 "total_duration": total_duration,
                 "total_processing_time": total_processing_time,
-                "segment_count": len(successful_results),
+                "segment_count": segment_global_id, # Total number of individual segments
                 "failed_count": len(failed_results),
-                "detailed_results": transcription_results
+                "detailed_results": transcription_results,
+                "combined_segments": combined_segments_with_timestamps # New field
             }
             
         except Exception as e:
@@ -158,7 +179,8 @@ class WhisperService:
                 "error": f"結果の結合中にエラーが発生しました: {str(e)}",
                 "total_duration": 0,
                 "total_processing_time": 0,
-                "segment_count": 0
+                "segment_count": 0,
+                "combined_segments": []
             }
     
     async def save_transcription_result(self, result: Dict, output_dir: str, user: str, original_filename: str) -> str:
@@ -193,9 +215,18 @@ class WhisperService:
                 content_parts.append("")
             
             content_parts.extend([
-                "文字起こし内容:",
-                "-" * 30,
+                "--- 全体書き起こし内容 ---",
                 result.get("combined_text", ""),
+                "",
+                "--- セグメントごとのタイムスタンプとテキスト ---",
+                "------------------------------------"
+            ])
+
+            # Add segmented text with timestamps
+            for segment_line in result.get("combined_segments", []):
+                content_parts.append(segment_line)
+            
+            content_parts.extend([
                 "",
                 f"処理完了: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             ])

@@ -106,6 +106,7 @@
 
         let selectedFile = null;
         let currentTranscriptionText = '';
+        let serverGeneratedFilePath = null; // New variable to store the server file path
 
         // Function to update button state
         function updateButtonState() {
@@ -248,6 +249,8 @@
             downloadButton.disabled = true;
             downloadButton.classList.add('opacity-50', 'cursor-not-allowed');
             downloadButton.classList.remove('hover:bg-gray-300');
+
+            serverGeneratedFilePath = null; // Reset the file path on new processing
         }
 
         // 転写成功時の処理
@@ -257,6 +260,13 @@
             // 実際の書き起こしテキストを表示
             currentTranscriptionText = response.transcription_text || 'テキストの取得に失敗しました。';
             transcriptionResultArea.innerText = currentTranscriptionText;
+
+            // Store the server-generated file path
+            if (response.processing_info && response.processing_info.file_path) {
+                // Extract only the filename from the full path to construct the download URL
+                serverGeneratedFilePath = response.processing_info.file_path.split('/').pop();
+            }
+
 
             // ステータス更新
             transcriptionStatus.textContent = response.message || 'テキスト化が完了しました！';
@@ -323,27 +333,18 @@
 
         // Download functionality
         downloadButton.addEventListener('click', () => {
-            const registrantName = registrantNameInput.value.trim() || 'Unknown';
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            const seconds = String(now.getSeconds()).padStart(2, '0');
-            const fileName = `${registrantName}_${year}${month}${day}_${hours}${minutes}${seconds}.txt`;
-
-            // 実際の書き起こしテキストを使用
-            const textContent = currentTranscriptionText || transcriptionResultArea.innerText;
-            const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            if (serverGeneratedFilePath) {
+                // Construct the URL to the new download endpoint
+                const downloadUrl = `/download/transcription/${serverGeneratedFilePath}`;
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = serverGeneratedFilePath; // Use the actual filename
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } else {
+                alert('ダウンロードするファイルが見つかりません。まず文字起こしを実行してください。');
+            }
         });
 
         // Refresh functionality

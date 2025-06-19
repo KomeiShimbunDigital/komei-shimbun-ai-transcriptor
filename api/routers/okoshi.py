@@ -9,6 +9,7 @@ from datetime import datetime
 import uuid
 import shutil
 import glob
+from starlette.responses import FileResponse
 
 # 必要なユーティリティをインポート
 from api.utils.audio_utils import AudioProcessor
@@ -17,10 +18,43 @@ from api.utils.wisper_service import WhisperService
 router = APIRouter()
 
 openai_api_key = os.getenv('OPENAI_API_KEY')
-print("KEY",openai_api_key)
+
 # 初期化
 audio_processor = AudioProcessor(output_dir="processed_audio")
 whisper_service = WhisperService(openai_api_key)  # OPENAI_API_KEY環境変数が必要
+
+def clean_directories_on_startup(): # Changed from async to sync as it performs blocking I/O
+    """
+    アプリケーション起動時に指定されたディレクトリ内のファイルを削除します。
+    """
+    directories_to_clean = [
+        "processed_audio",
+        "transcription_results"
+    ]
+
+    print("=== アプリケーション起動時のクリーンアップ開始 ===")
+    for directory in directories_to_clean:
+        dir_path = Path(directory)
+        if dir_path.exists() and dir_path.is_dir():
+            print(f"🗑️ {directory}/ 配下のファイルを削除中...")
+            try:
+                for item in dir_path.iterdir():
+                    if item.is_file():
+                        os.remove(item)
+                        print(f"  - 削除: {item}")
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                        print(f"  - ディレクトリ削除: {item}")
+                print(f"✓ {directory}/ のクリーンアップ完了。")
+            except Exception as e:
+                print(f"❌ {directory}/ のクリーンアップ中にエラーが発生しました: {e}")
+        else:
+            print(f"ℹ️ ディレクトリが存在しないか、ディレクトリではありません: {directory}/")
+            if not dir_path.exists():
+                dir_path.mkdir(parents=True, exist_ok=True) # ディレクトリがない場合は作成
+                print(f"✓ ディレクトリを作成しました: {directory}/")
+    print("=== アプリケーション起動時のクリーンアップ完了 ===")
+
 
 @router.post("/okoshi", response_model=params.ResponseParams)
 async def okoshi_process(
@@ -227,3 +261,19 @@ async def delete_all_files():
             status_code=500,
             detail=f"ファイル削除処理中にエラーが発生しました: {str(e)}"
         )
+
+# New endpoint to serve the transcription files
+@router.get("/download/transcription/{filename}")
+async def download_transcription_file(filename: str):
+    """
+    指定された文字起こしファイルをダウンロード
+    """
+    file_path = Path("transcription_results") / filename
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="ファイルが見つかりません")
+    
+    # Ensure the file is within the intended directory to prevent path traversal
+    if not str(file_path.resolve()).startswith(str(Path("transcription_results").resolve())):
+        raise HTTPException(status_code=400, detail="無効なファイルパスです")
+
+    return FileResponse(path=file_path, filename=filename, media_type="text/plain")

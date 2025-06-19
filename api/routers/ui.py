@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import FileResponse
 from pathlib import Path
 from starlette.staticfiles import StaticFiles
+from api.routers import okoshi
 
 router = APIRouter()
 
@@ -15,4 +16,6 @@ HTMLを返す
 """
 @router.get("/ui", response_class=HTMLResponse)
 def index():
+    print("'/ui' endpoint accessed. Initiating directory cleanup.")
+    okoshi.clean_directories_on_startup() # Call the synchronous cleanup function
     return FileResponse(static_dir / "index.html")
