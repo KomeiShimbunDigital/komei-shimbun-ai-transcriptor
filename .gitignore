@@ -138,3 +138,6 @@ cython_debug/
 config.ini
 # APIディレクトリ内のpyc系ファイルを無視する
 api/__pycache__/
+
+/processed_audio/
+/transcription_results/
