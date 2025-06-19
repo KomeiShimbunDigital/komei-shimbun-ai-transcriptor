@@ -9,6 +9,14 @@ packages = [{include = "okoshi-api"}]
 python = "^3.11"
 fastapi = "^0.95.0"
 uvicorn = { extras = ["standard"], version = "^0.23.2" }
+jinja2 = "^3.1.6"
+python-multipart = "^0.0.20"
+pydub = "^0.25.1"
+librosa = "^0.11.0"
+soundfile = "^0.13.1"
+openai = "^1.88.0"
+aiofiles = "^24.1.0"
+python-dotenv = "^1.1.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2"
