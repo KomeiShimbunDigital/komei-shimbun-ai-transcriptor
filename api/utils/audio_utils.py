@@ -29,7 +29,6 @@ class AudioProcessor:
             f.write(file_content)
         return save_path
 
-    # ... (rest of the AudioProcessor class methods)
     def validate_audio_file(self, file_path: Path) -> tuple[bool, str]:
         """
         音声ファイルの形式とサイズを検証します。
@@ -60,14 +59,19 @@ class AudioProcessor:
         except Exception as e:
             raise ValueError(f"音声の長さを取得できませんでした: {e}")
 
-    def split_audio(self, file_path: Path, segment_length: int = 600) -> list[Path]:
+    def split_audio(self, file_path: Path, user: str, segment_length: int = 600) -> list[Path]:
         """
         音声ファイルを指定された秒数で分割し、分割されたファイルのパスリストを返します。
+        分割されたファイルは /processed_audio/{user}/split_files/ に保存されます。
         """
         try:
             audio = AudioSegment.from_file(file_path)
             total_length_ms = len(audio)
             segment_length_ms = segment_length * 1000
+            
+            # ユーザー別のsplit_filesディレクトリを作成
+            user_split_dir = self.output_dir / user / "split_files"
+            user_split_dir.mkdir(parents=True, exist_ok=True)
             
             split_files = []
             file_stem = file_path.stem
@@ -77,7 +81,7 @@ class AudioProcessor:
                 end_ms = min(start_ms + segment_length_ms, total_length_ms)
                 segment = audio[start_ms:end_ms]
                 
-                output_segment_path = self.output_dir / f"{file_stem}_part_{i:03d}{file_extension}"
+                output_segment_path = user_split_dir / f"{file_stem}_part_{i:03d}{file_extension}"
                 segment.export(output_segment_path, format="mp3")
                 split_files.append(output_segment_path)
             
@@ -90,6 +94,7 @@ class AudioProcessor:
         指定されたファイルがMP3でない場合、MP3に変換します。
         変換されたファイルのパスを返します。
         """
+        print(f"ファイルをMP3に変換します convert_to_mp3_if_needed: {file_path}")
         file_extension = file_path.suffix.lower()
         if file_extension == ".mp3":
             print(f"ファイルは既にMP3形式です: {file_path}")

@@ -100,6 +100,7 @@ class WhisperService:
     def combine_transcriptions(self, transcription_results: List[Dict]) -> Dict:
         """
         複数の文字起こし結果を結合
+        各ファイルのタイムスタンプを連続した時間に調整
         """
         try:
             # 成功した結果のみを抽出
@@ -113,7 +114,7 @@ class WhisperService:
                     "total_duration": 0,
                     "total_processing_time": 0,
                     "segment_count": 0,
-                    "combined_segments": [] # Add combined_segments for the new requirement
+                    "combined_segments": []
                 }
             
             # ファイル名でソート（part_000, part_001... の順序を保持）
@@ -121,10 +122,13 @@ class WhisperService:
             
             # テキストを結合
             combined_text_parts = []
-            combined_segments_with_timestamps = [] # To store segments with timestamps
+            combined_segments_with_timestamps = []
             total_duration = 0
             total_processing_time = 0
-            segment_global_id = 0 # Global segment ID across all files
+            segment_global_id = 0
+            
+            # 各ファイルは10分（600秒）の想定
+            file_duration = 600  # 10分 = 600秒
             
             for i, result in enumerate(successful_results):
                 text = result.get("text", "").strip()
@@ -133,18 +137,25 @@ class WhisperService:
                     segment_header = f"\n--- セグメント {i+1} ---\n" if len(successful_results) > 1 else ""
                     combined_text_parts.append(f"{segment_header}{text}")
 
+                # 現在のファイルの開始時間オフセット（秒）
+                time_offset = i * file_duration
+                
                 # Process segments for timestamped output
                 for segment in result.get("segments", []):
-                    # Access attributes using dot notation instead of .get()
+                    # セグメントの元の時間を取得
                     start_time = segment.start
                     end_time = segment.end
                     segment_text = segment.text.strip()
                     
+                    # 全体の時間軸に調整
+                    adjusted_start = start_time + time_offset
+                    adjusted_end = end_time + time_offset
+                    
                     # Format timestamp
-                    start_min = int(start_time // 60)
-                    start_sec = int(start_time % 60)
-                    end_min = int(end_time // 60)
-                    end_sec = int(end_time % 60)
+                    start_min = int(adjusted_start // 60)
+                    start_sec = int(adjusted_start % 60)
+                    end_min = int(adjusted_end // 60)
+                    end_sec = int(adjusted_end % 60)
                     timestamp_str = f"[{start_min:02d}:{start_sec:02d} - {end_min:02d}:{end_sec:02d}]"
                     
                     combined_segments_with_timestamps.append(f"{timestamp_str} {segment_text}")
@@ -167,12 +178,12 @@ class WhisperService:
                 "error": error_summary if error_summary else None,
                 "total_duration": total_duration,
                 "total_processing_time": total_processing_time,
-                "segment_count": segment_global_id, # Total number of individual segments
+                "segment_count": segment_global_id,
                 "failed_count": len(failed_results),
                 "detailed_results": transcription_results,
-                "combined_segments": combined_segments_with_timestamps # New field
+                "combined_segments": combined_segments_with_timestamps
             }
-            
+                    
         except Exception as e:
             return {
                 "combined_text": "",

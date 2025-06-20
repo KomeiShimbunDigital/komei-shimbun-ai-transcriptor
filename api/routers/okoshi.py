@@ -153,7 +153,7 @@ async def okoshi_process(
         if duration > 600:
             print("⚡ 音声が10分を超えています。分割処理を開始...")
             # 分割はMP3ファイルとして出力される
-            split_files = audio_processor.split_audio(process_target_file, segment_length=600)
+            split_files = audio_processor.split_audio(process_target_file, user=user, segment_length=600)
             print(f"✓ 分割完了: {len(split_files)}ファイル")
             # 分割された場合は、元の変換済みファイルはもう不要なので削除対象に含める
             files_to_clean_up_after_transcription = split_files + [process_target_file] # process_target_fileがconverted_file_pathなので追加
